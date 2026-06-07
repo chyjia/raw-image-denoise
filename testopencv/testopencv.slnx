@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <BuildType Name="Debug" />
+    <Platform Name="x64" />
+  </Configurations>
+  <Project Path="testopencv.vcxproj" Id="ce55a7fa-88c4-45be-8810-9c16d6134fe8" />
+</Solution>

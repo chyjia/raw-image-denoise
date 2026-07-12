@@ -1,0 +1,25 @@
+Mono10 flat-field photon-transfer-curve validation
+
+Sequences analysed: 8
+Central ROI: 40.0% of width and height
+Variance source: per-pixel temporal sample variance
+Flicker correction: each frame is shifted by its ROI mean before variance calculation
+
+PTC fit: variance_dn2 = 0.09552184 * mean_dn + 4.43602242
+R squared: 0.72771217
+Read-noise intercept estimate: sqrt(max(intercept, 0)) = 2.106187 DN
+
+Interpretation:
+- A positive, approximately linear slope supports a Poisson-Gaussian noise model.
+- Large residuals or high illumination CV can indicate lamp flicker, saturation, or changing camera settings.
+- The slope is in DN variance per DN mean; convert it to electrons only after camera conversion gain is calibrated.
+
+Per-sequence checks:
+- Video_20260712153023604_w1920_h1200_pMono10_f20.raw: f=20, interval=50.000 ms, mean=303.424 DN, corrected_var=27.960 DN², illumination_CV=1.2003%, saturation=0.0000%
+- Video_20260712153052883_w1920_h1200_pMono10_f14.raw: f=14, interval=71.429 ms, mean=348.180 DN, corrected_var=30.803 DN², illumination_CV=3.8575%, saturation=0.0000%
+- Video_20260712153129232_w1920_h1200_pMono10_f11.raw: f=11, interval=90.909 ms, mean=454.941 DN, corrected_var=65.568 DN², illumination_CV=4.7687%, saturation=0.0000%
+- Video_20260712153203825_w1920_h1200_pMono10_f9.raw: f=9, interval=111.111 ms, mean=499.141 DN, corrected_var=46.929 DN², illumination_CV=0.2814%, saturation=0.0003%
+- Video_20260712153240740_w1920_h1200_pMono10_f8.raw: f=8, interval=125.000 ms, mean=566.979 DN, corrected_var=68.177 DN², illumination_CV=1.8185%, saturation=0.0003%
+- Video_20260712153325230_w1920_h1200_pMono10_f7.raw: f=7, interval=142.857 ms, mean=657.454 DN, corrected_var=61.508 DN², illumination_CV=0.9471%, saturation=0.0003%
+- Video_20260712153400208_w1920_h1200_pMono10_f6.raw: f=6, interval=166.667 ms, mean=767.513 DN, corrected_var=73.760 DN², illumination_CV=2.7590%, saturation=0.0003%
+- Video_20260712153442283_w1920_h1200_pMono10_f5.raw: f=5, interval=200.000 ms, mean=955.515 DN, corrected_var=93.822 DN², illumination_CV=1.0535%, saturation=0.1564%

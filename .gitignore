@@ -11,3 +11,7 @@ testopencv/**/*.tlog/
 # User-specific Visual Studio files
 *.user
 *.suo
+
+# Generated Python bytecode
+__pycache__/
+*.py[cod]

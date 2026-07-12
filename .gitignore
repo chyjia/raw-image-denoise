@@ -1,0 +1,13 @@
+# Downloadable OpenCV distributions and generated build outputs
+opencv-*-windows/
+testopencv/.vs/
+testopencv/**/x64/
+testopencv/**/*.ipch
+testopencv/**/*.ilk
+testopencv/**/*.pdb
+testopencv/**/*.obj
+testopencv/**/*.tlog/
+
+# User-specific Visual Studio files
+*.user
+*.suo

@@ -5,9 +5,8 @@ Methods:
 2. Generalized-Anscombe VST followed by tiled BM3D.
 3. Generalized-Anscombe VST followed by OpenCV fast non-local means (NLM).
 
-The PTC constants below are from the local flat-field validation. They are
-adequate for an A/B experiment, not a substitute for a stable-light PTC
-calibration.
+The PTC constants below are the mean of the two current independent Mono10
+grayscale-chart calibrations.
 """
 
 from __future__ import annotations
@@ -22,8 +21,8 @@ import cv2
 import numpy as np
 
 
-PTC_SLOPE = 0.09552184
-PTC_INTERCEPT = 4.43602242
+PTC_SLOPE = 0.10618515
+PTC_INTERCEPT = 2.00145577
 RAW_MAX = 1023.0
 FILENAME_RE = re.compile(
     r"_w(?P<width>\d+)_h(?P<height>\d+)_pMono10_f(?P<fps>\d+(?:\.\d+)?)\.raw$",

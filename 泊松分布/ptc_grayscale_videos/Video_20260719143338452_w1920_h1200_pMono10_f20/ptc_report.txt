@@ -1,0 +1,14 @@
+Source: D:\denoise\素材\实验素材 泊松\Video_20260719143338452_w1920_h1200_pMono10_f20.raw
+Geometry: 1920x1200 Mono10 (lsb), 20 fps
+Frames: 406 total, 406 sampled
+Usable flat pixels: 1619388
+Gray bins: 58 total, 57 used in robust fit
+
+PTC: variance_dn2 = 0.10622108 * mean_dn + 2.03341382
+R squared: 0.99953180
+Read-noise intercept estimate: 1.425978 DN
+
+Frame scale CV: 0.303903%
+Frame offset std: 0.044497 DN
+Saturated samples: 2.297860%
+Flat-gradient threshold: 2.645741 DN/pixel

@@ -15,3 +15,16 @@ testopencv/**/*.tlog/
 # Generated Python bytecode
 __pycache__/
 *.py[cod]
+
+# Local Python environments
+.venv*/
+
+# RAW datasets and generated model artifacts
+*.raw
+*.pt
+*.npy
+nafnet_denoise/cache/
+nafnet_denoise/burst_cache*/
+nafnet_denoise/checkpoints*/
+nafnet_denoise/inference*/
+nafnet_denoise/validation_results*/

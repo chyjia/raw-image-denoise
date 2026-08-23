@@ -1,0 +1,20 @@
+{
+  "iter": 12,
+  "name": "ans_s0.2_k0.5_sig2_f50",
+  "family": "anscombe",
+  "recipe": {
+    "name": "ans_s0.2_k0.5_sig2_f50",
+    "family": "anscombe",
+    "strength": 0.2,
+    "k_mad": 0.5,
+    "sigma": 2.0,
+    "flat_pct": 50.0,
+    "harden": 40.0
+  },
+  "mean_des": 0.9471860208834205,
+  "f10_ef": 0.9971613138455655,
+  "f05_ef": 0.9056686668163693,
+  "f05_ng": 0.9302401517838993,
+  "f1_ef": 0.9997523113713398,
+  "edge_safe": true
+}

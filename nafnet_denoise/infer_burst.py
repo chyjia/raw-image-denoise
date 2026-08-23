@@ -12,6 +12,8 @@ import torch
 from .alignment import estimate_translation, warp_translation
 from .burst_dataset import make_burst_tensor
 from .common import (
+    DEFAULT_BLACK_LEVEL_DN,
+    DEFAULT_DARK_VARIANCE_PER_S,
     PTC_INTERCEPT,
     PTC_SLOPE,
     RAW_MAX,
@@ -25,6 +27,14 @@ from .common import (
 )
 from .infer import save_mono10_png
 from .temporal_fusion import build_burst_nafnet
+
+
+def _parse_int_tuple(value, default: tuple[int, ...]) -> tuple[int, ...]:
+    if value is None:
+        return default
+    if isinstance(value, (list, tuple)):
+        return tuple(int(item) for item in value)
+    return tuple(int(part.strip()) for part in str(value).split(",") if part.strip())
 
 
 def load_burst_model(
@@ -47,11 +57,50 @@ def load_burst_model(
     return model.eval().to(device), width, input_frames
 
 
+def load_burst_restormer(
+    checkpoint: Path,
+    device: torch.device,
+    width: int | None = None,
+    input_frames: int | None = None,
+) -> tuple[torch.nn.Module, int, int]:
+    from .burst_restormer import build_burst_restormer
+
+    state = torch.load(checkpoint, map_location=device, weights_only=False)
+    saved_args = state.get("args", {}) if isinstance(state, dict) else {}
+    width = width or int(saved_args.get("width", 48))
+    input_frames = input_frames or int(saved_args.get("input_frames", 16))
+    dim = int(saved_args.get("dim", 48))
+    num_blocks = _parse_int_tuple(
+        saved_args.get("num_blocks_tuple", saved_args.get("num_blocks")),
+        (2, 3, 3, 4),
+    )
+    heads = _parse_int_tuple(
+        saved_args.get("heads_tuple", saved_args.get("heads")),
+        (1, 2, 4, 8),
+    )
+    num_refinement_blocks = int(saved_args.get("num_refinement_blocks", 2))
+    model = build_burst_restormer(
+        width=width,
+        input_frames=input_frames,
+        dim=dim,
+        num_blocks=num_blocks,
+        num_refinement_blocks=num_refinement_blocks,
+        heads=heads,
+        use_checkpoint=False,
+    )
+    model_state = state["model"] if isinstance(state, dict) and "model" in state else state
+    model.load_state_dict(model_state)
+    return model.eval().to(device), width, input_frames
+
+
 def prepare_aligned_burst(
     frames: np.memmap,
     target_index: int,
     input_frames: int,
-) -> list[np.ndarray]:
+    min_response: float = 0.03,
+    reject_unreliable: bool = True,
+    return_responses: bool = False,
+) -> list[np.ndarray] | tuple[list[np.ndarray], np.ndarray]:
     indices = gather_frame_indices(target_index, frames.shape[0], input_frames)
     reference_index = center_frame_index(input_frames)
     decoded = [decode_mono10(frames[index]) for index in indices]
@@ -62,11 +111,13 @@ def prepare_aligned_burst(
     reference_roi = reference[y0:y1, x0:x1]
     reference_mean = float(reference_roi.mean())
     aligned = []
+    responses = []
     for index, image in enumerate(decoded):
         offset = float(image[y0:y1, x0:x1].mean()) - reference_mean
         corrected = np.clip(image - offset, 0.0, RAW_MAX)
         if index == reference_index:
             aligned.append(corrected.astype(np.float32))
+            responses.append(1.0)
             continue
         tx, ty, response = estimate_translation(
             reference_roi,
@@ -74,10 +125,26 @@ def prepare_aligned_burst(
             downsample=4,
             max_shift=16.0,
         )
-        if response < 0.03:
+        responses.append(float(response))
+        if response < min_response:
+            if reject_unreliable:
+                aligned.append(reference.astype(np.float32, copy=True))
+                continue
             tx, ty = 0.0, 0.0
         aligned.append(warp_translation(corrected, tx, ty))
+    response_array = np.asarray(responses, dtype=np.float32)
+    if return_responses:
+        return aligned, response_array
     return aligned
+
+
+def alignment_confidence(responses: np.ndarray, reference_index: int) -> float:
+    """Median phase-correlation response, excluding the reference frame."""
+    if responses.size <= 1:
+        return 1.0
+    keep = np.ones(responses.size, dtype=bool)
+    keep[reference_index] = False
+    return float(np.median(responses[keep]))
 
 
 @torch.no_grad()
@@ -88,6 +155,8 @@ def denoise_burst(
     device: torch.device,
     tile_size: int = 256,
     overlap: int = 32,
+    dark_variance_per_s: float = DEFAULT_DARK_VARIANCE_PER_S,
+    black_level_dn: float = DEFAULT_BLACK_LEVEL_DN,
 ) -> np.ndarray:
     height, width = aligned_frames[0].shape
     accumulation = np.zeros((height, width), dtype=np.float32)
@@ -113,6 +182,8 @@ def denoise_burst(
                 exposure_ms,
                 PTC_SLOPE,
                 PTC_INTERCEPT,
+                black_level_dn=black_level_dn,
+                dark_variance_per_s=dark_variance_per_s,
             )
             tensor = torch.from_numpy(burst[None]).to(device)
             with torch.autocast(
@@ -122,7 +193,9 @@ def denoise_burst(
             ):
                 prediction = model(tensor)
             prediction_dn = model_output_to_raw(
-                prediction.float().cpu().numpy()[0, 0]
+                prediction.float().cpu().numpy()[0, 0],
+                exposure_ms=exposure_ms,
+                dark_variance_per_s=dark_variance_per_s,
             )
             window = window_base[: y1 - y0, : x1 - x0]
             accumulation[y0:y1, x0:x1] += prediction_dn * window

@@ -9,7 +9,14 @@ from pathlib import Path
 import numpy as np
 
 from .alignment import warp_translation
-from .common import decode_mono10, memmap_frames, vst_forward, vst_inverse
+from .common import (
+    DEFAULT_DARK_VARIANCE_PER_S,
+    decode_mono10,
+    exposure_intercept,
+    memmap_frames,
+    vst_forward,
+    vst_inverse,
+)
 
 
 def tiled_bm3d(
@@ -56,6 +63,11 @@ def main() -> None:
     parser.add_argument("--overlap", type=int, default=48)
     parser.add_argument("--max-files", type=int, default=0)
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument(
+        "--dark-variance-per-s",
+        type=float,
+        default=DEFAULT_DARK_VARIANCE_PER_S,
+    )
     args = parser.parse_args()
 
     entries = json.loads(args.manifest.read_text(encoding="utf-8"))
@@ -69,7 +81,7 @@ def main() -> None:
             print(f"[{sequence_index}/{len(selected)}] Reusing {teacher_path.name}")
             continue
 
-        print(f"[{sequence_index}/{len(selected)}] BM3D {entry['name']}")
+        print(f"[{sequence_index}/{len(selected)}] BM3D {entry['name']}", flush=True)
         frames = memmap_frames(
             Path(entry["path"]),
             int(entry["width"]),
@@ -78,6 +90,11 @@ def main() -> None:
         anchor_index = int(entry["anchor_index"])
         shifts = np.load(entry["shifts"])
         offsets = np.load(entry["offsets"])
+        exposure_ms = float(entry.get("exposure_ms", 0.0))
+        intercept = exposure_intercept(
+            exposure_ms,
+            dark_variance_per_s=args.dark_variance_per_s,
+        )
         image = decode_mono10(frames[anchor_index])
         image = np.clip(image - float(offsets[anchor_index]), 0.0, 1023.0)
         image = warp_translation(
@@ -87,10 +104,11 @@ def main() -> None:
         )
         teacher = vst_inverse(
             tiled_bm3d(
-                vst_forward(image),
+                vst_forward(image, intercept=intercept),
                 tile_size=args.tile_size,
                 overlap=args.overlap,
-            )
+            ),
+            intercept=intercept,
         ).astype(np.float32)
         np.save(teacher_path, teacher)
         entry["teacher"] = str(teacher_path)
@@ -100,7 +118,7 @@ def main() -> None:
         json.dumps(entries, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    print(f"Updated teacher paths in {output_manifest}")
+    print(f"Updated teacher paths in {output_manifest}", flush=True)
 
 
 if __name__ == "__main__":

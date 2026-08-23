@@ -1,0 +1,24 @@
+{
+  "iter": 28,
+  "name": "eui_rs0_n3_d0.7_k1_sig2.4",
+  "family": "eui",
+  "recipe": {
+    "name": "eui_rs0_n3_d0.7_k1_sig2.4",
+    "family": "eui",
+    "read_sigma": 0.0,
+    "n_iters": 3,
+    "thr_decay": 0.7,
+    "max_shift": 1,
+    "residual_scale": 0.4,
+    "k_mad": 1.0,
+    "sigma": 2.4,
+    "s_lo": 0.12,
+    "s_hi": 0.4
+  },
+  "mean_des": 0.9564941539848775,
+  "f10_ef": 0.9982436940095549,
+  "f05_ef": 0.9035520456001377,
+  "f05_ng": 0.9440263389707553,
+  "f1_ef": 0.9988148630570156,
+  "edge_safe": true
+}

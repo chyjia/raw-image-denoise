@@ -1,0 +1,23 @@
+{
+  "iter": 9,
+  "name": "cnes_m1_r0.4_s0.12_0.4_k1_sig2.8",
+  "family": "cne_spin",
+  "recipe": {
+    "name": "cnes_m1_r0.4_s0.12_0.4_k1_sig2.8",
+    "family": "cne_spin",
+    "max_shift": 1,
+    "residual_scale": 0.4,
+    "s_lo": 0.12,
+    "s_hi": 0.4,
+    "noise_lo": 0.0008,
+    "noise_hi": 0.006,
+    "k_mad": 1.0,
+    "sigma": 2.8
+  },
+  "mean_des": 0.9528349761354661,
+  "f10_ef": 0.9976877290332036,
+  "f05_ef": 0.9047326625665989,
+  "f05_ng": 0.9366747049421443,
+  "f1_ef": 0.9995966604873346,
+  "edge_safe": true
+}

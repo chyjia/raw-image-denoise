@@ -1,0 +1,25 @@
+{
+  "iter": 15,
+  "name": "rcs_n2_d0.5_k1.2_sig2.8_s0.12",
+  "family": "recurse",
+  "recipe": {
+    "name": "rcs_n2_d0.5_k1.2_sig2.8_s0.12",
+    "family": "recurse",
+    "n_iters": 2,
+    "thr_decay": 0.5,
+    "max_shift": 1,
+    "residual_scale": 0.4,
+    "s_lo": 0.12,
+    "s_hi": 0.4,
+    "noise_lo": 0.0008,
+    "noise_hi": 0.006,
+    "k_mad": 1.2,
+    "sigma": 2.8
+  },
+  "mean_des": 0.9555539424641726,
+  "f10_ef": 0.998107860303374,
+  "f05_ef": 0.9039313605898712,
+  "f05_ng": 0.9408045981593014,
+  "f1_ef": 0.9990397636876553,
+  "edge_safe": true
+}

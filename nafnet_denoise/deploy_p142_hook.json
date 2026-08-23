@@ -1,0 +1,25 @@
+{
+  "iter": 11,
+  "name": "bjs_b2_n4_d0.7_sig2",
+  "family": "blockjs",
+  "recipe": {
+    "name": "bjs_b2_n4_d0.7_sig2",
+    "family": "blockjs",
+    "k_list": [
+      0.8,
+      1.0,
+      1.2
+    ],
+    "block_size": 2,
+    "n_iters": 4,
+    "thr_decay": 0.7,
+    "sigma": 2.0,
+    "residual_scale": 0.35
+  },
+  "mean_des": 0.9580249960037004,
+  "f10_ef": 0.9974849316929228,
+  "f05_ef": 0.9051683226231378,
+  "f05_ng": 0.9431454502696476,
+  "f1_ef": 0.9999618321163899,
+  "edge_safe": true
+}

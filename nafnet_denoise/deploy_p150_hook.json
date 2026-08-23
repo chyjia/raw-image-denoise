@@ -1,0 +1,24 @@
+{
+  "iter": 8,
+  "name": "bi_0.8_1_1.2_n5_d0.7",
+  "family": "bishrink",
+  "recipe": {
+    "name": "bi_0.8_1_1.2_n5_d0.7",
+    "family": "bishrink",
+    "k_list": [
+      0.8,
+      1.0,
+      1.2
+    ],
+    "n_iters": 5,
+    "thr_decay": 0.7,
+    "sigma": 1.8,
+    "residual_scale": 0.3
+  },
+  "mean_des": 0.9589233627401438,
+  "f10_ef": 0.9980885576188112,
+  "f05_ef": 0.9031758108073895,
+  "f05_ng": 0.9488748141563996,
+  "f1_ef": 0.9985966458321557,
+  "edge_safe": true
+}

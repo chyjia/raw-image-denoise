@@ -1,0 +1,23 @@
+{
+  "iter": 9,
+  "name": "fps_1.5_10",
+  "family": "sched",
+  "recipe": {
+    "name": "fps_1.5_10",
+    "family": "sched",
+    "low_fps": 1.5,
+    "mid_fps": 10.0,
+    "low_bilat": 0.9,
+    "mid_bilat": 0.85,
+    "u_low": 0.2,
+    "u_mid": 0.16,
+    "u_high": 0.12,
+    "u_sig": 1.4
+  },
+  "mean_des": 0.9299306331349378,
+  "f10_ef": 0.9886166588125394,
+  "f05_ef": 0.9043354674089992,
+  "f05_ng": 0.9213231665756548,
+  "f1_ef": 0.9990743885609725,
+  "edge_safe": true
+}

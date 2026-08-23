@@ -72,6 +72,65 @@ class NAFBlock(nn.Module):
         return x * self.gamma + identity
 
 
+class NonLocalBlock(nn.Module):
+    """Embedded-Gaussian non-local block with zero-init residual (warm-start safe).
+
+    Lives at the NAFNet bottleneck so a 256 patch maps to ~16×16 tokens.
+    When spatial tokens exceed ``max_tokens``, ``phi``/``g`` are pooled.
+    """
+
+    def __init__(
+        self,
+        channels: int,
+        inter_channels: int | None = None,
+        max_tokens: int = 1024,
+    ):
+        super().__init__()
+        inter = inter_channels if inter_channels is not None else max(channels // 4, 32)
+        self.max_tokens = max_tokens
+        self.norm = LayerNorm2d(channels)
+        self.theta = nn.Conv2d(channels, inter, 1, 1, 0)
+        self.phi = nn.Conv2d(channels, inter, 1, 1, 0)
+        self.g = nn.Conv2d(channels, inter, 1, 1, 0)
+        self.proj = nn.Conv2d(inter, channels, 1, 1, 0)
+        nn.init.zeros_(self.proj.weight)
+        if self.proj.bias is not None:
+            nn.init.zeros_(self.proj.bias)
+        self.gamma = nn.Parameter(torch.zeros(1))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        identity = x
+        x = self.norm(x)
+        batch, _channels, height, width = x.shape
+        theta = self.theta(x)
+        phi = self.phi(x)
+        g = self.g(x)
+        tokens = height * width
+        if tokens > self.max_tokens:
+            scale = int((tokens / self.max_tokens) ** 0.5 + 0.999)
+            scale = max(scale, 2)
+            phi = F.avg_pool2d(phi, kernel_size=scale, stride=scale)
+            g = F.avg_pool2d(g, kernel_size=scale, stride=scale)
+        theta_flat = theta.flatten(2)  # B, C', N
+        phi_flat = phi.flatten(2)  # B, C', M
+        g_flat = g.flatten(2)  # B, C', M
+        attn_scale = theta_flat.shape[1] ** -0.5
+        attn = torch.bmm(theta_flat.transpose(1, 2), phi_flat) * attn_scale
+        attn = F.softmax(attn, dim=-1)
+        out = torch.bmm(g_flat, attn.transpose(1, 2))  # B, C', N
+        out = out.view(batch, -1, height, width)
+        return identity + self.gamma * self.proj(out)
+
+
+def build_bottleneck_nonlocal(
+    channels: int,
+    nonlocal_count: int = 1,
+) -> nn.Module:
+    if nonlocal_count <= 0:
+        return nn.Identity()
+    return nn.Sequential(*[NonLocalBlock(channels) for _ in range(nonlocal_count)])
+
+
 class NAFNet(nn.Module):
     def __init__(
         self,
@@ -82,11 +141,15 @@ class NAFNet(nn.Module):
         middle_blk_num: int = 6,
         dec_blk_nums: list[int] | None = None,
         image_channel_index: int = 0,
+        use_nonlocal: bool = False,
+        nonlocal_count: int = 1,
     ):
         super().__init__()
         enc_blk_nums = enc_blk_nums or [2, 2, 2, 2]
         dec_blk_nums = dec_blk_nums or [2, 2, 2, 2]
         self.image_channel_index = image_channel_index
+        self.use_nonlocal = use_nonlocal
+        self.nonlocal_count = nonlocal_count
 
         self.intro = nn.Conv2d(inp_channels, width, 3, 1, 1)
         self.ending = nn.Conv2d(width, out_channels, 3, 1, 1)
@@ -102,6 +165,11 @@ class NAFNet(nn.Module):
             channels *= 2
 
         self.middle = nn.Sequential(*[NAFBlock(channels) for _ in range(middle_blk_num)])
+        self.bottleneck_nl = (
+            build_bottleneck_nonlocal(channels, nonlocal_count)
+            if use_nonlocal
+            else nn.Identity()
+        )
 
         for num in dec_blk_nums:
             self.ups.append(
@@ -124,6 +192,7 @@ class NAFNet(nn.Module):
             skips.append(x)
             x = down(x)
         x = self.middle(x)
+        x = self.bottleneck_nl(x)
         for decoder, up, skip in zip(self.decoders, self.ups, reversed(skips)):
             x = up(x)
             x = x + skip
@@ -136,12 +205,52 @@ def build_nafnet(
     width: int = 32,
     input_frames: int = 4,
     use_exposure: bool = True,
+    use_sigma: bool = False,
+    enc_blk_nums: list[int] | None = None,
+    middle_blk_num: int = 6,
+    dec_blk_nums: list[int] | None = None,
+    use_nonlocal: bool = False,
+    nonlocal_count: int = 1,
 ) -> NAFNet:
     center = center_frame_index(input_frames)
-    inp_channels = model_input_channels(input_frames, use_exposure)
+    inp_channels = model_input_channels(
+        input_frames,
+        use_exposure=use_exposure,
+        use_sigma=use_sigma,
+    )
     return NAFNet(
         inp_channels=inp_channels,
         out_channels=1,
         width=width,
+        enc_blk_nums=enc_blk_nums,
+        middle_blk_num=middle_blk_num,
+        dec_blk_nums=dec_blk_nums,
         image_channel_index=center,
+        use_nonlocal=use_nonlocal,
+        nonlocal_count=nonlocal_count,
     )
+
+
+def expand_state_dict_width(
+    source: dict[str, torch.Tensor],
+    target_model: NAFNet,
+) -> dict[str, torch.Tensor]:
+    """Copy / zero-pad tensors so a narrower NAFNet can warm-start a wider one."""
+    target = target_model.state_dict()
+    expanded: dict[str, torch.Tensor] = {}
+    for key, dst in target.items():
+        if key not in source:
+            expanded[key] = dst
+            continue
+        src = source[key]
+        if src.shape == dst.shape:
+            expanded[key] = src
+            continue
+        if src.ndim != dst.ndim:
+            expanded[key] = dst
+            continue
+        out = dst.new_zeros(dst.shape)
+        slices = tuple(slice(0, min(a, b)) for a, b in zip(src.shape, dst.shape))
+        out[slices] = src[slices]
+        expanded[key] = out
+    return expanded

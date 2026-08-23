@@ -1,0 +1,32 @@
+{
+  "iter": 19,
+  "name": "tta4",
+  "family": "tta",
+  "mean_des": 0.9237601914376032,
+  "f10_ef": 0.9853679693397113,
+  "f05_ef": 0.899002594652763,
+  "f05_ng": 0.9120310264147032,
+  "f1_ef": 0.9945945741374098,
+  "edge_safe": true,
+  "recipe": {
+    "name": "tta4",
+    "family": "tta",
+    "augs": [
+      "id",
+      "lr",
+      "ud",
+      "udlr"
+    ],
+    "weights": null,
+    "tta_sota": true,
+    "tta_edge": true,
+    "tiles": [
+      256
+    ],
+    "u_amt": 0.15,
+    "u_sig": 1.4,
+    "mask_ratio": 0.0,
+    "epochs": 0,
+    "target": "edge"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "iter": 2,
+  "name": "mad_0.002_0.012_f30_b0.72",
+  "family": "robust",
+  "recipe": {
+    "name": "mad_0.002_0.012_f30_b0.72",
+    "family": "robust",
+    "mode": "mad",
+    "noise_lo": 0.002,
+    "noise_hi": 0.012,
+    "bilat_lo": 0.72,
+    "bilat_hi": 1.0,
+    "u_lo": 0.1,
+    "u_hi": 0.22,
+    "low_fps": 1.5,
+    "flat_pct": 30.0
+  },
+  "mean_des": 0.9442120261187615,
+  "f10_ef": 0.9969413585634512,
+  "f05_ef": 0.9060370884265204,
+  "f05_ng": 0.9259119191017327,
+  "f1_ef": 0.9995089709825846,
+  "edge_safe": true
+}

@@ -1,0 +1,27 @@
+{
+  "iter": 16,
+  "name": "2d_1.5_5_hb1_hu1.1",
+  "family": "2d",
+  "recipe": {
+    "name": "2d_1.5_5_hb1_hu1.1",
+    "family": "2d",
+    "low_fps": 1.5,
+    "mid_fps": 5.0,
+    "t_dark": 3.0,
+    "t_bright": 15.0,
+    "bilat_d": 0.95,
+    "bilat_m": 0.88,
+    "bilat_b": 0.8,
+    "u_d": 0.22,
+    "u_m": 0.15,
+    "u_b": 0.14,
+    "high_bilat_scale": 1.0,
+    "high_u_scale": 1.1
+  },
+  "mean_des": 0.9385372452317756,
+  "f10_ef": 0.988069094078544,
+  "f05_ef": 0.8954095824327201,
+  "f05_ng": 0.9149380388467931,
+  "f1_ef": 0.989987291866263,
+  "edge_safe": true
+}

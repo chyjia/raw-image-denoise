@@ -1,0 +1,24 @@
+{
+  "iter": 6,
+  "name": "geom_d4_plus_r180",
+  "family": "geom",
+  "recipe": {
+    "name": "geom_d4_plus_r180",
+    "family": "geom",
+    "augs": [
+      "id",
+      "r90",
+      "r180",
+      "r270",
+      "r90_lr",
+      "r270_lr"
+    ],
+    "edge_augs": null
+  },
+  "mean_des": 0.9253009352953563,
+  "f10_ef": 0.9919271883673921,
+  "f05_ef": 0.8982241312097804,
+  "f05_ng": 0.9120868293188458,
+  "f1_ef": 0.9931627953642609,
+  "edge_safe": true
+}

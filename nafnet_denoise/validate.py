@@ -370,7 +370,7 @@ def main() -> None:
     args.output_dir.mkdir(parents=True, exist_ok=True)
     print(f"Loading checkpoint: {checkpoint_path}")
     print(f"Device: {device}")
-    model, input_frames = load_model(
+    model, input_frames, _width = load_model(
         checkpoint_path,
         args.width,
         device,

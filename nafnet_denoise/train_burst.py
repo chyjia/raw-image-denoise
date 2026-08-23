@@ -11,7 +11,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from .burst_dataset import RealBurstDataset, SyntheticBurstDataset
+from .burst_dataset import RealBurstDataset, SyntheticBurstDataset, VideoBurstSyntheticDataset
 from .common import (
     RAW_MAX,
     decode_mono10,
@@ -154,22 +154,49 @@ def build_dataset(args: argparse.Namespace, validation: bool = False):
             center_mode=args.center_mode,
             seed=seed,
         )
-    return SyntheticBurstDataset(
-        args.manifest,
+    common_kwargs = dict(
         patch_size=args.patch_size,
         input_frames=args.input_frames,
         samples_per_epoch=samples,
         noise_jitter=args.noise_jitter,
-        max_shift=args.max_motion_shift,
-        max_rotation=args.max_motion_rotation,
-        motion_strength=args.motion_strength,
         exposure_ms_range=(args.exposure_ms_min, args.exposure_ms_max),
         black_level_dn=args.black_level_dn,
         black_drift_sigma=args.black_drift_sigma,
         fixed_pattern_sigma=args.fixed_pattern_sigma,
         row_noise_sigma=args.row_noise_sigma,
         column_noise_sigma=args.column_noise_sigma,
+        dark_variance_per_s_range=(
+            args.dark_variance_per_s_min,
+            args.dark_variance_per_s_max,
+        ),
         seed=seed,
+    )
+    if args.dataset_mode == "video":
+        return VideoBurstSyntheticDataset(args.manifest, **common_kwargs)
+    if args.dataset_mode == "mixed":
+        if args.video_manifest is None:
+            raise ValueError("--video-manifest is required for mixed mode.")
+        pixelshift_samples = max(1, int(round(samples * (1.0 - args.video_fraction))))
+        video_samples = max(1, samples - pixelshift_samples)
+        pixelshift = SyntheticBurstDataset(
+            args.manifest,
+            max_shift=args.max_motion_shift,
+            max_rotation=args.max_motion_rotation,
+            motion_strength=args.motion_strength,
+            **{**common_kwargs, "samples_per_epoch": pixelshift_samples},
+        )
+        video = VideoBurstSyntheticDataset(
+            args.video_manifest,
+            motion_blur_strength=args.motion_blur_strength,
+            **{**common_kwargs, "samples_per_epoch": video_samples, "seed": seed + 17},
+        )
+        return torch.utils.data.ConcatDataset([pixelshift, video])
+    return SyntheticBurstDataset(
+        args.manifest,
+        max_shift=args.max_motion_shift,
+        max_rotation=args.max_motion_rotation,
+        motion_strength=args.motion_strength,
+        **common_kwargs,
     )
 
 
@@ -285,8 +312,20 @@ def save_checkpoint(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dataset-mode", choices=("synthetic", "real"), required=True)
+    parser.add_argument(
+        "--dataset-mode",
+        choices=("synthetic", "real", "video", "mixed"),
+        required=True,
+    )
     parser.add_argument("--manifest", type=Path, required=True)
+    parser.add_argument("--video-manifest", type=Path, default=None)
+    parser.add_argument(
+        "--video-fraction",
+        type=float,
+        default=0.5,
+        help="Fraction of mixed-mode samples drawn from the DAVIS video burst set.",
+    )
+    parser.add_argument("--motion-blur-strength", type=float, default=1.0)
     parser.add_argument("--validation-manifest", type=Path, default=None)
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--input-frames", type=int, default=16)
@@ -321,11 +360,13 @@ def main() -> None:
     parser.add_argument("--motion-strength", type=float, default=1.0)
     parser.add_argument("--exposure-ms-min", type=float, default=10.0)
     parser.add_argument("--exposure-ms-max", type=float, default=400.0)
-    parser.add_argument("--black-level-dn", type=float, default=0.0)
+    parser.add_argument("--black-level-dn", type=float, default=60.0)
     parser.add_argument("--black-drift-sigma", type=float, default=0.0)
     parser.add_argument("--fixed-pattern-sigma", type=float, default=0.0)
     parser.add_argument("--row-noise-sigma", type=float, default=0.0)
     parser.add_argument("--column-noise-sigma", type=float, default=0.0)
+    parser.add_argument("--dark-variance-per-s-min", type=float, default=0.0)
+    parser.add_argument("--dark-variance-per-s-max", type=float, default=6.0)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--resume", type=Path, default=None)

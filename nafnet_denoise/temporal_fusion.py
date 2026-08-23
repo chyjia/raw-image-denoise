@@ -31,6 +31,62 @@ def flow_warp(features: torch.Tensor, flow: torch.Tensor) -> torch.Tensor:
     )
 
 
+class DeformableFrameAlign(nn.Module):
+    """Warp neighbor VST frames to the center with residual flow (zero-init → identity).
+
+    Operates on stacked model inputs ``[vst_0..vst_{N-1}, extras...]`` and returns
+    the same layout. Last-layer weights/biases are zero so flow starts at 0 px.
+    """
+
+    def __init__(
+        self,
+        input_frames: int,
+        feat_width: int = 16,
+        max_residual_flow: float = 2.0,
+        reference_index: int | None = None,
+    ):
+        super().__init__()
+        from .common import center_frame_index
+
+        self.input_frames = int(input_frames)
+        self.reference_index = (
+            center_frame_index(self.input_frames)
+            if reference_index is None
+            else int(reference_index)
+        )
+        self.max_residual_flow = float(max_residual_flow)
+        mid = max(int(feat_width), 8)
+        self.pair_net = nn.Sequential(
+            nn.Conv2d(2, mid, 3, padding=1),
+            nn.GELU(),
+            nn.Conv2d(mid, mid, 3, padding=1),
+            nn.GELU(),
+            nn.Conv2d(mid, 2, 3, padding=1),
+        )
+        nn.init.zeros_(self.pair_net[-1].weight)
+        nn.init.zeros_(self.pair_net[-1].bias)
+
+    def forward(self, inp: torch.Tensor) -> torch.Tensor:
+        if inp.shape[1] < self.input_frames:
+            raise ValueError(
+                f"Expected >= {self.input_frames} channels, got {inp.shape[1]}"
+            )
+        frames = inp[:, : self.input_frames]
+        extras = inp[:, self.input_frames :]
+        reference = frames[:, self.reference_index : self.reference_index + 1]
+        aligned = []
+        for frame_index in range(self.input_frames):
+            if frame_index == self.reference_index:
+                aligned.append(reference)
+                continue
+            current = frames[:, frame_index : frame_index + 1]
+            flow = torch.tanh(
+                self.pair_net(torch.cat((current, reference), dim=1))
+            ) * self.max_residual_flow
+            aligned.append(flow_warp(current, flow))
+        return torch.cat([torch.cat(aligned, dim=1), extras], dim=1)
+
+
 class TemporalAttentionFusion(nn.Module):
     """Predict local residual flow and confidence for each reference-frame pair."""
 

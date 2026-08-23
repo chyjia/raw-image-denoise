@@ -28,3 +28,50 @@ nafnet_denoise/burst_cache*/
 nafnet_denoise/checkpoints*/
 nafnet_denoise/inference*/
 nafnet_denoise/validation_results*/
+
+# Bulky generated image/video outputs
+*.png
+*.jpg
+*.jpeg
+*.bmp
+*.tif
+*.tiff
+*.webp
+*.gif
+*.mp4
+*.avi
+
+# NAFNet run outputs and caches
+nafnet_denoise/compare*/
+nafnet_denoise/output*/
+nafnet_denoise/benchmark*/
+nafnet_denoise/cache*/
+nafnet_denoise/burst_cache*/
+nafnet_denoise/video_burst_cache*/
+nafnet_denoise/checkpoints*/
+
+# Model checkpoints (any location)
+checkpoints*/
+checkpoints_*/
+restormer/checkpoints*/
+restormer_denoise/checkpoints*/
+
+# Heavy binary / tensor artifacts
+*.pth
+*.ckpt
+*.onnx
+*.npz
+*.raw
+
+# Temporary monitor / status dumps
+_monitor*.txt
+_git_status_tmp.txt
+
+# Local vivo capture folders
+vivo*/
+vivo夜景*/
+vivo*/**
+
+# Python caches / envs (keep explicit)
+__pycache__/
+.venv*/

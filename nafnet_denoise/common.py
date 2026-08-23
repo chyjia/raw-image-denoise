@@ -15,7 +15,10 @@ import numpy as np
 PTC_SLOPE = 0.10618515
 PTC_INTERCEPT = 2.00145577
 RAW_MAX = 1023.0
-READ_NOISE_DN = float(np.sqrt(max(PTC_INTERCEPT, 0.0)))
+DEFAULT_BLACK_LEVEL_DN = 60.0
+DEFAULT_DARK_VARIANCE_PER_S = 3.0
+READ_VARIANCE_DN2 = PTC_INTERCEPT + PTC_SLOPE * DEFAULT_BLACK_LEVEL_DN
+READ_NOISE_DN = float(np.sqrt(max(READ_VARIANCE_DN2, 0.0)))
 
 _META_RE = re.compile(
     r"_w(?P<width>\d+)_h(?P<height>\d+)_pMono10_f(?P<fps>\d+(?:\.\d+)?)\.raw$",
@@ -66,19 +69,170 @@ def frames_to_model_input(
     frames_dn: list[np.ndarray],
     exposure_ms: float,
     reference_index: int | None = None,
+    dark_variance_per_s: float = 0.0,
+    use_sigma: bool = False,
+    use_exposure: bool = True,
+    postmerge_calib=None,
+    measured_fe_sigma: bool = False,
 ) -> np.ndarray:
-    """Stack aligned VST frames and an exposure-conditioning channel."""
+    """Stack aligned VST frames, optional sigma map, and exposure channel.
+
+    Channel layout when ``use_sigma`` and ``use_exposure`` are both True:
+    ``[vst_0, ..., vst_{N-1}, sigma_ref, exposure]``.
+
+    Sigma priority when ``use_sigma``:
+    1. ``measured_fe_sigma`` — flat highpass MAD on the reference (FFDNet-style)
+    2. ``postmerge_calib`` — affine residual post-Wiener model
+    3. single-frame PTC
+    """
     if reference_index is None:
         reference_index = center_frame_index(len(frames_dn))
     aligned = align_frames_to_reference(frames_dn, reference_index)
-    vst_channels = [raw_to_model_input(frame) for frame in aligned]
-    exposure = normalize_exposure(exposure_ms)
-    exposure_channel = np.full_like(vst_channels[0], exposure, dtype=np.float32)
-    return np.ascontiguousarray(np.stack([*vst_channels, exposure_channel], axis=0))
+    vst_channels = [
+        raw_to_model_input(
+            frame,
+            exposure_ms=exposure_ms,
+            dark_variance_per_s=dark_variance_per_s,
+        )
+        for frame in aligned
+    ]
+    channels = list(vst_channels)
+    if use_sigma:
+        ref = aligned[reference_index]
+        if measured_fe_sigma:
+            from .postmerge_noise import measured_fe_sigma_map
+
+            channels.append(
+                measured_fe_sigma_map(
+                    ref,
+                    exposure_ms=exposure_ms,
+                    dark_variance_per_s=dark_variance_per_s,
+                )
+            )
+        elif postmerge_calib is not None:
+            from .postmerge_noise import residual_noise_sigma_map
+
+            channels.append(
+                residual_noise_sigma_map(
+                    ref,
+                    postmerge_calib,
+                    exposure_ms=exposure_ms,
+                    dark_variance_per_s=dark_variance_per_s,
+                )
+            )
+        else:
+            channels.append(
+                noise_sigma_map(
+                    ref,
+                    exposure_ms=exposure_ms,
+                    dark_variance_per_s=dark_variance_per_s,
+                )
+            )
+    if use_exposure:
+        exposure = normalize_exposure(exposure_ms)
+        channels.append(np.full_like(vst_channels[0], exposure, dtype=np.float32))
+    return np.ascontiguousarray(np.stack(channels, axis=0))
 
 
-def model_input_channels(input_frames: int, use_exposure: bool = True) -> int:
-    return input_frames + (1 if use_exposure else 0)
+def model_input_channels(
+    input_frames: int,
+    use_exposure: bool = True,
+    use_sigma: bool = False,
+) -> int:
+    return input_frames + (1 if use_sigma else 0) + (1 if use_exposure else 0)
+
+
+def expand_intro_state_for_sigma(
+    state: dict[str, torch.Tensor],
+    input_frames: int,
+) -> dict[str, torch.Tensor]:
+    """Expand ``intro`` conv from ``[VST*N, exp]`` to ``[VST*N, sigma, exp]``."""
+    import torch
+
+    weight = state["intro.weight"]
+    old_c = int(weight.shape[1])
+    new_c = input_frames + 2
+    if old_c == new_c:
+        return state
+    if old_c != input_frames + 1:
+        raise ValueError(
+            f"Cannot expand intro for sigma: expected {input_frames + 1} "
+            f"input channels, got {old_c}"
+        )
+    expanded = dict(state)
+    new_weight = weight.new_zeros(weight.shape[0], new_c, weight.shape[2], weight.shape[3])
+    new_weight[:, :input_frames] = weight[:, :input_frames]
+    # sigma channel starts at 0; copy exposure weights to the last channel.
+    new_weight[:, input_frames + 1] = weight[:, input_frames]
+    expanded["intro.weight"] = new_weight
+    return expanded
+
+
+def expand_intro_state_for_input_frames(
+    state: dict[str, torch.Tensor],
+    new_frames: int,
+    use_sigma: bool = True,
+    use_exposure: bool = True,
+) -> dict[str, torch.Tensor]:
+    """Expand ``intro`` VST channels when increasing ``input_frames`` (center-aligned).
+
+    Old VST kernels are placed so their center frame lands on the new center;
+    newly added outer frame channels are zero-initialized. Sigma/exposure
+    kernels (if present) are copied to the trailing channels.
+    """
+    weight = state["intro.weight"]
+    old_c = int(weight.shape[1])
+    new_extras = (1 if use_sigma else 0) + (1 if use_exposure else 0)
+    new_c = int(new_frames) + new_extras
+    if old_c == new_c:
+        return state
+
+    # Infer old frame count: try (sigma+exp), then exp-only, then frames-only.
+    old_frames = None
+    old_has_sigma = False
+    old_has_exposure = False
+    for has_sigma, has_exp in ((True, True), (False, True), (True, False), (False, False)):
+        extras = (1 if has_sigma else 0) + (1 if has_exp else 0)
+        candidate = old_c - extras
+        if candidate >= 1:
+            old_frames = candidate
+            old_has_sigma = has_sigma
+            old_has_exposure = has_exp
+            break
+    if old_frames is None or old_frames > new_frames:
+        raise ValueError(
+            f"Cannot expand intro frames: old_c={old_c} -> new_frames={new_frames} "
+            f"(new_c={new_c})"
+        )
+
+    expanded = dict(state)
+    new_weight = weight.new_zeros(weight.shape[0], new_c, weight.shape[2], weight.shape[3])
+    old_center = center_frame_index(old_frames)
+    new_center = center_frame_index(new_frames)
+    shift = new_center - old_center
+    for src in range(old_frames):
+        dst = src + shift
+        if 0 <= dst < new_frames:
+            new_weight[:, dst] = weight[:, src]
+    # Fill remaining outer VST channels with nearest copied frame weights.
+    for dst in range(new_frames):
+        if float(new_weight[:, dst].abs().sum()) > 0:
+            continue
+        nearest = min(range(old_frames), key=lambda src: abs((src + shift) - dst))
+        new_weight[:, dst] = weight[:, nearest]
+
+    cursor = old_frames
+    dest = new_frames
+    if old_has_sigma and use_sigma:
+        new_weight[:, dest] = weight[:, cursor]
+        cursor += 1
+        dest += 1
+    elif use_sigma:
+        dest += 1  # leave zeros
+    if old_has_exposure and use_exposure:
+        new_weight[:, new_frames + new_extras - 1] = weight[:, cursor]
+    expanded["intro.weight"] = new_weight
+    return expanded
 
 
 def parse_geometry(name: str) -> tuple[int, int, float]:
@@ -108,16 +262,48 @@ def decode_mono10(raw: np.ndarray) -> np.ndarray:
     return (raw & 0x03FF).astype(np.float32)
 
 
-def vst_forward(image: np.ndarray) -> np.ndarray:
-    radicand = PTC_SLOPE * image + 0.375 * PTC_SLOPE**2 + PTC_INTERCEPT
+def exposure_intercept(
+    exposure_ms: float | None = None,
+    intercept: float = PTC_INTERCEPT,
+    dark_variance_per_s: float = 0.0,
+) -> float:
+    exposure_s = max(float(exposure_ms or 0.0), 0.0) / 1000.0
+    return float(intercept + exposure_s * max(dark_variance_per_s, 0.0))
+
+
+def signal_variance_dn2(
+    image_dn: np.ndarray,
+    exposure_ms: float | None = None,
+    slope: float = PTC_SLOPE,
+    intercept: float = PTC_INTERCEPT,
+    black_level_dn: float = DEFAULT_BLACK_LEVEL_DN,
+    dark_variance_per_s: float = 0.0,
+) -> np.ndarray:
+    signal = np.maximum(image_dn - black_level_dn, 0.0)
+    read_variance = intercept + slope * black_level_dn
+    dark_variance = max(float(exposure_ms or 0.0), 0.0) / 1000.0 * max(
+        dark_variance_per_s,
+        0.0,
+    )
+    return np.maximum(slope * signal + read_variance + dark_variance, 1e-6)
+
+
+def vst_forward(
+    image: np.ndarray,
+    intercept: float = PTC_INTERCEPT,
+) -> np.ndarray:
+    radicand = PTC_SLOPE * image + 0.375 * PTC_SLOPE**2 + intercept
     return (2.0 / PTC_SLOPE) * np.sqrt(np.maximum(radicand, 1e-8))
 
 
-def vst_inverse(transformed: np.ndarray) -> np.ndarray:
+def vst_inverse(
+    transformed: np.ndarray,
+    intercept: float = PTC_INTERCEPT,
+) -> np.ndarray:
     image = (
         (PTC_SLOPE / 4.0) * transformed**2
         - 0.375 * PTC_SLOPE
-        - PTC_INTERCEPT / PTC_SLOPE
+        - intercept / PTC_SLOPE
     )
     return np.clip(image, 0.0, RAW_MAX)
 
@@ -135,22 +321,61 @@ def vst_denormalize(normalized: np.ndarray) -> np.ndarray:
     return normalized * VST_SCALE + VST_MIN
 
 
-def raw_to_model_input(image_dn: np.ndarray) -> np.ndarray:
-    return vst_normalize(vst_forward(image_dn))
+def raw_to_model_input(
+    image_dn: np.ndarray,
+    exposure_ms: float | None = None,
+    dark_variance_per_s: float = 0.0,
+) -> np.ndarray:
+    intercept = exposure_intercept(
+        exposure_ms,
+        dark_variance_per_s=dark_variance_per_s,
+    )
+    return vst_normalize(vst_forward(image_dn, intercept=intercept))
 
 
-def model_output_to_raw(normalized: np.ndarray) -> np.ndarray:
-    return vst_inverse(vst_denormalize(normalized))
+def model_output_to_raw(
+    normalized: np.ndarray,
+    exposure_ms: float | None = None,
+    dark_variance_per_s: float = 0.0,
+) -> np.ndarray:
+    intercept = exposure_intercept(
+        exposure_ms,
+        dark_variance_per_s=dark_variance_per_s,
+    )
+    return vst_inverse(vst_denormalize(normalized), intercept=intercept)
 
 
 def noise_sigma_map(
     image_dn: np.ndarray,
     slope: float = PTC_SLOPE,
     intercept: float = PTC_INTERCEPT,
+    exposure_ms: float | None = None,
+    black_level_dn: float = DEFAULT_BLACK_LEVEL_DN,
+    dark_variance_per_s: float = 0.0,
 ) -> np.ndarray:
     """Normalized raw-domain sigma map for noise-conditioned models."""
-    sigma = np.sqrt(np.maximum(slope * image_dn + intercept, 1e-6))
-    sigma_max = np.sqrt(max(slope * RAW_MAX + intercept, 1e-6))
+    sigma = np.sqrt(
+        signal_variance_dn2(
+            image_dn,
+            exposure_ms,
+            slope,
+            intercept,
+            black_level_dn,
+            dark_variance_per_s,
+        )
+    )
+    sigma_max = np.sqrt(
+        float(
+            signal_variance_dn2(
+                np.asarray(RAW_MAX),
+                exposure_ms,
+                slope,
+                intercept,
+                black_level_dn,
+                dark_variance_per_s,
+            )
+        )
+    )
     return (sigma / sigma_max).astype(np.float32)
 
 
@@ -159,9 +384,19 @@ def poisson_gaussian_noise(
     rng: np.random.Generator,
     slope: float = PTC_SLOPE,
     intercept: float = PTC_INTERCEPT,
+    exposure_ms: float | None = None,
+    black_level_dn: float = DEFAULT_BLACK_LEVEL_DN,
+    dark_variance_per_s: float = 0.0,
 ) -> np.ndarray:
     """Add signal-dependent Gaussian noise with optional perturbed PTC parameters."""
-    variance = np.maximum(slope * clean_dn + intercept, 1e-6)
+    variance = signal_variance_dn2(
+        clean_dn,
+        exposure_ms,
+        slope,
+        intercept,
+        black_level_dn,
+        dark_variance_per_s,
+    )
     noisy = clean_dn + rng.normal(0.0, 1.0, size=clean_dn.shape).astype(np.float32) * np.sqrt(variance)
     return np.clip(noisy, 0.0, RAW_MAX).astype(np.float32)
 

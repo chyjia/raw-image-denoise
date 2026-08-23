@@ -1,0 +1,34 @@
+{
+  "iter": 4,
+  "name": "d4_r90_flip",
+  "family": "d4",
+  "recipe": {
+    "name": "d4_r90_flip",
+    "family": "d4",
+    "augs": [
+      "id",
+      "r90",
+      "r270",
+      "r90_lr",
+      "r270_lr"
+    ],
+    "shifts": [],
+    "soup_ckpts": [],
+    "soup_mode": "output",
+    "target": "edge",
+    "epochs": 4,
+    "patches": 128,
+    "lr": 1.5e-06,
+    "ms_edge_weight": 0.35,
+    "ms_edge_scales": 3,
+    "highpass_weight": 0.45,
+    "des_edge_fid": 1.4,
+    "mask_ratio": 0.0
+  },
+  "mean_des": 0.9251976155053453,
+  "f10_ef": 0.9917765797668545,
+  "f05_ef": 0.8983057939932703,
+  "f05_ng": 0.9121410378542986,
+  "f1_ef": 0.9930532036140638,
+  "edge_safe": true
+}

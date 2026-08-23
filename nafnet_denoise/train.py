@@ -126,26 +126,27 @@ def validate_real_sequences(
         frame_width, frame_height, _fps = parse_geometry(path.name)
         exposure_ms = parse_exposure_ms(path.name)
         frames = memmap_frames(path, frame_width, frame_height)
-        if frame_index >= frames.shape[0]:
+        target_index = frames.shape[0] // 2 if frame_index < 0 else frame_index
+        if target_index >= frames.shape[0]:
             raise ValueError(
-                f"{path.name}: validation frame {frame_index} exceeds "
+                f"{path.name}: validation frame {target_index} exceeds "
                 f"available range 0-{frames.shape[0] - 1}"
             )
         ys, xs = central_roi(frame_height, frame_width)
         temporal = aligned_temporal_trimmed_mean(
             frames,
-            frame_index,
+            target_index,
             ys,
             xs,
             frames.shape[0],
             window=16,
             trim_fraction=0.10,
-            exclude_frame_index=frame_index,
+            exclude_frame_index=target_index,
         )
         output = denoise_frame(
             model,
             frames,
-            frame_index,
+            target_index,
             exposure_ms,
             device,
             input_frames=input_frames,
@@ -171,6 +172,10 @@ def save_model_checkpoint(
     validation_mae: float,
     validation_ssim: float,
 ) -> None:
+    saved_args = {}
+    for key, value in vars(args).items():
+        saved_args[key] = str(value) if isinstance(value, Path) else value
+    saved_args["out_dir"] = str(args.out_dir)
     torch.save(
         {
             "model": model.state_dict(),
@@ -178,7 +183,7 @@ def save_model_checkpoint(
             "step": step,
             "validation_mae_dn": validation_mae,
             "validation_ssim": validation_ssim,
-            "args": vars(args) | {"out_dir": str(args.out_dir)},
+            "args": saved_args,
         },
         path,
     )
@@ -205,14 +210,24 @@ def main() -> None:
     )
     parser.add_argument("--width", type=int, default=32)
     parser.add_argument("--input-frames", type=int, default=4)
+    parser.add_argument("--exposure-ms-min", type=float, default=10.0)
+    parser.add_argument("--exposure-ms-max", type=float, default=2000.0)
+    parser.add_argument("--black-level-dn", type=float, default=60.0)
+    parser.add_argument("--dark-variance-per-s-min", type=float, default=0.0)
+    parser.add_argument("--dark-variance-per-s-max", type=float, default=6.0)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--no-ram-cache", action="store_true")
     parser.add_argument("--max-steps", type=int, default=0)
     parser.add_argument("--resume", type=Path, default=None)
     parser.add_argument(
+        "--fresh-resume",
+        action="store_true",
+        help="Load model weights from --resume but restart epoch/step/best metrics.",
+    )
+    parser.add_argument(
         "--validation-dir",
         type=Path,
-        default=Path(r"D:\denoise\素材\训练素材\不参加训练，用来验证训练模型效果"),
+        default=Path(r"D:\denoise\素材\降噪素材"),
     )
     parser.add_argument("--validation-every", type=int, default=5)
     parser.add_argument("--validation-frame-index", type=int, default=10)
@@ -244,6 +259,12 @@ def main() -> None:
         patches_per_epoch=args.patches_per_epoch,
         input_frames=args.input_frames,
         noise_jitter=args.noise_jitter,
+        exposure_ms_range=(args.exposure_ms_min, args.exposure_ms_max),
+        black_level_dn=args.black_level_dn,
+        dark_variance_per_s_range=(
+            args.dark_variance_per_s_min,
+            args.dark_variance_per_s_max,
+        ),
         cache_images_in_ram=not args.no_ram_cache,
     )
     loader = DataLoader(
@@ -275,15 +296,22 @@ def main() -> None:
     if args.resume and args.resume.exists():
         state = torch.load(args.resume, map_location=device, weights_only=False)
         model.load_state_dict(state["model"])
-        optimizer.load_state_dict(state["optimizer"])
-        for parameter_group in optimizer.param_groups:
-            parameter_group["lr"] = args.lr
-        start_epoch = state.get("epoch", 0)
-        global_step = state.get("step", 0)
-        best_mae = state.get("best_mae_dn", best_mae)
-        best_ssim = state.get("best_ssim", best_ssim)
-        best_composite = state.get("best_composite", best_composite)
-        print(f"Resumed from {args.resume} at epoch {start_epoch}")
+        if args.fresh_resume:
+            for parameter_group in optimizer.param_groups:
+                parameter_group["lr"] = args.lr
+            start_epoch = 0
+            global_step = 0
+            print(f"Loaded weights from {args.resume}; restarting metrics/epoch")
+        else:
+            optimizer.load_state_dict(state["optimizer"])
+            for parameter_group in optimizer.param_groups:
+                parameter_group["lr"] = args.lr
+            start_epoch = state.get("epoch", 0)
+            global_step = state.get("step", 0)
+            best_mae = state.get("best_mae_dn", best_mae)
+            best_ssim = state.get("best_ssim", best_ssim)
+            best_composite = state.get("best_composite", best_composite)
+            print(f"Resumed from {args.resume} at epoch {start_epoch}")
 
     log_path = args.out_dir / "train_log.csv"
     if not log_path.exists():

@@ -1,0 +1,31 @@
+{
+  "iter": 1,
+  "name": "mask_0_r0.25_p8_edge",
+  "family": "mask_ft",
+  "ckpt": "nafnet_denoise\\compare_meta100_p12\\ckpts_mask_0_r0.25_p8_edge\\best.pt",
+  "recipe": {
+    "name": "mask_0_r0.25_p8_edge",
+    "family": "mask_ft",
+    "mask_ratio": 0.25,
+    "mask_patch": 8,
+    "target": "edge",
+    "epochs": 4,
+    "patches": 128,
+    "lr": 1.5e-06,
+    "highpass_weight": 0.45,
+    "des_edge_fid": 1.4,
+    "shifts": [],
+    "augs": [
+      "id",
+      "lr",
+      "ud",
+      "udlr"
+    ]
+  },
+  "mean_des": 0.9239812046526129,
+  "f10_ef": 0.9887412921955792,
+  "f05_ef": 0.899002594652763,
+  "f05_ng": 0.9120310264147032,
+  "f1_ef": 0.9945945741374098,
+  "edge_safe": true
+}

@@ -1,0 +1,26 @@
+{
+  "iter": 17,
+  "name": "sch_u0.18_0.15_0.12_b0.8_0.75",
+  "family": "sched",
+  "recipe": {
+    "name": "sch_u0.18_0.15_0.12_b0.8_0.75",
+    "family": "sched",
+    "low_fps": 1.0,
+    "mid_fps": 5.0,
+    "low_bilat": 0.8,
+    "mid_bilat": 0.75,
+    "bilat_harden": 40.0,
+    "u_low": 0.18,
+    "u_mid": 0.15,
+    "u_high": 0.12,
+    "u_sig": 1.4,
+    "blend_T": 8.0,
+    "blend_harden": 16.0
+  },
+  "mean_des": 0.9271443320152112,
+  "f10_ef": 0.9991876786913256,
+  "f05_ef": 0.9027594583270759,
+  "f05_ng": 0.9156288788000781,
+  "f1_ef": 0.9975860826690591,
+  "edge_safe": true
+}
